@@ -1,2 +1,4 @@
 #don't bother with the sample data
 sampledata/
+#It's python. Skip compiled stuff
+__pycache__/

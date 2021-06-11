@@ -12,20 +12,23 @@
 # The format of this file is a *weird* angle-bracket delimiter. This script
 # (Class) provides a way to turn this into standard Python Dict objects, by
 # default using MAC address as the key.
+#
+#     Internal format of the clientlist is similar to a repetition of:
+#          <Name>MacAddress>Int1>Int2>>
+#     (noting that "<" and ">" are literals not representative)
 ###############################################################################
-
-
 class CustClientListParser(object):
+    """Parse an ASUS custom_clientlist string into a Dict with MAC as key"""
 
     def __init__(self, rawclientdata):
+        """Load the datastring and parse into records"""
         self.mactoname = {}
         self.rawdata = rawclientdata
         self._parseclientdata()
 
     def _parseclientdata(self):
-        #Internal format of the clientlist is similar to a repetition of:
-        # <Name>MacAddress>Int1>Int2>>
-        #(noting that "<" and ">" are literals not representative)
+        """Actually perform the work of parsing data into a KVP Dictionary"""
+
         kvp = self.rawdata.split(">>") # Split on "record delimiter"
         if len(kvp)<2 :
             raise TypeError("Passed incorrect ASUS custom_clientlist data")
@@ -39,10 +42,10 @@ class CustClientListParser(object):
                 raise ValueError(f"Invalid NAME field in record {rec} ({fields[0]})")
             if len(fields[1]) != 17 :
                 raise ValueError(f"Invalid MAC field in record {rec} ({fields[1]})")
-
             self.mactoname[fields[1]] = fields[0][1:] #Strip the "<" before appending
 
     def getMappings(self):
+        """Return mapping dict from parsed data"""
         return self.mactoname
 
 if __name__ == "__main__":
