@@ -28,7 +28,6 @@ class CustClientListParser(object):
 
     def _parseclientdata(self):
         """Actually perform the work of parsing data into a KVP Dictionary"""
-
         kvp = self.rawdata.split(">>") # Split on "record delimiter"
         if len(kvp)<2 :
             raise TypeError("Passed incorrect ASUS custom_clientlist data")
@@ -49,7 +48,8 @@ class CustClientListParser(object):
         return self.mactoname
 
 if __name__ == "__main__":
-    print(f"This is a TEST PROGRAM")
+    print("This is a TEST PROGRAM")
+    print("(you probably don't want to be here)")
     from os.path import isfile
     from sys import argv
     if len(argv) == 2 and isfile(argv[1]):
@@ -57,6 +57,5 @@ if __name__ == "__main__":
             namemappings = CustClientListParser(ccf.read()).getMappings()
             for mac in namemappings:
                 print(f"{mac} -> {namemappings[mac]}")
-
     else :
         print("When called directly, supply the path to an ASUS Router custom_clientlist file on the command line")
