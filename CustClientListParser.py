@@ -17,6 +17,8 @@
 #          <Name>MacAddress>Int1>Int2>>
 #     (noting that "<" and ">" are literals not representative)
 ###############################################################################
+from os.path import isfile
+
 class CustClientListParser(object):
     """Parse an ASUS custom_clientlist string into a Dict with MAC as key"""
 
@@ -24,6 +26,13 @@ class CustClientListParser(object):
         """Load the datastring and parse into records"""
         self.mactoname = {}
         self.rawdata = rawclientdata
+        #We may be passed "rawclientdata" as either a filename or the contents.
+        #There's no foolproof way to detect which is which but this is close:
+        if isfile(rawclientdata):
+            with open(rawclientdata,"r") as x:
+                self.rawdata=x.read()
+        else :
+            self.rawdata = rawclientdata
         self._parseclientdata()
 
     def _parseclientdata(self):
@@ -50,12 +59,10 @@ class CustClientListParser(object):
 if __name__ == "__main__":
     print("This is a TEST PROGRAM")
     print("(you probably don't want to be here)")
-    from os.path import isfile
     from sys import argv
     if len(argv) == 2 and isfile(argv[1]):
-        with open(argv[1]) as ccf:
-            namemappings = CustClientListParser(ccf.read()).getMappings()
-            for mac in namemappings:
-                print(f"{mac} -> {namemappings[mac]}")
+        namemappings = CustClientListParser(argv[1]).getMappings()
+        for mac in namemappings:
+            print(f"{mac} -> {namemappings[mac]}")
     else :
         print("When called directly, supply the path to an ASUS Router custom_clientlist file on the command line")
