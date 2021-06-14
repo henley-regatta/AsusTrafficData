@@ -5,7 +5,11 @@ ASUS router running **Asuswrt-Merlin** software with the (Trend Micro)
 Traffic Analyzer enabled.
 
 Basically an exercise in taking the data out of the router, shuffling it into
-another datastore, and visualising it from there.
+another datastore, and visualising it from there. The intent is that you'll
+use already available visualisation infrastructures - I'm using Grafana.
+
+More on the background and motivations for this little project here:
+[Blog post describing the why of AsusTrafficData](https://www.guided-naafi.org/systemsmanagement/2021/06/14/WhyUseAsusWhenYouCanWriteYourOwn.html)
 
 ## Source Data
 The key files on the router that we'll use are:
