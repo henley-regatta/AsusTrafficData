@@ -23,7 +23,7 @@ from CustClientListParser import CustClientListParser
 from NtCenterMacParser import NtCenterMacParser
 #################################################################################
 # USER-MODIFIABLE PARAMETERS:
-optionsFile="read_traffic_database_options.json"
+optionsFile=os.getcwd() + "read_traffic_database_options.json"
 #default options we EXPECT to be overridden:
 opt = {
     'inHost'        : 'influxserver',
