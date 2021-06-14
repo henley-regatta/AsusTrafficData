@@ -16,6 +16,7 @@
 import sqlite3
 import time
 from os.path import isfile
+from os import getcwd
 from sys import argv
 import json
 from influxdb import InfluxDBClient
@@ -23,7 +24,7 @@ from CustClientListParser import CustClientListParser
 from NtCenterMacParser import NtCenterMacParser
 #################################################################################
 # USER-MODIFIABLE PARAMETERS:
-optionsFile=os.getcwd() + "read_traffic_database_options.json"
+optionsFile=getcwd() + "read_traffic_database_options.json"
 #default options we EXPECT to be overridden:
 opt = {
     'inHost'        : 'influxserver',
