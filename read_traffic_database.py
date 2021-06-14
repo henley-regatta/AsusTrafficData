@@ -23,6 +23,10 @@ from NtCenterMacParser import NtCenterMacParser
 #################################################################################
 class TrafficAnalyzerExtractor(object):
     """Extractor for data from the Traffic Analyzer db passed as a file name"""
+    #Simple enumeration of the fields available in the traffic table
+    #used for queries later...
+    traffic_fields = "timestamp,mac,app_name,cat_name,tx,rx"
+
     def __init__(self,trafficdbfile):
         """Load and actually do the parsing of the SQLLite database"""
         self.uniquemacs = []
@@ -30,6 +34,7 @@ class TrafficAnalyzerExtractor(object):
         self.uniquecats = []
         self.mindate = -1
         self.maxdate = 1
+        self.numrows = 0
         self.dbfile = trafficdbfile
         #We want this to cause program oopsies if it fails:
         self.conn = sqlite3.connect(self.dbfile)
@@ -57,6 +62,31 @@ class TrafficAnalyzerExtractor(object):
         for t in tsCur:
             self.mindate = t[0]
             self.maxdate = t[1]
+        rcCur = self.conn.execute("SELECT COUNT(*) FROM traffic")
+        for r in rcCur:
+            self.numrows = r[0]
+
+    def getAllMetrics(self):
+        """This is the simplest retrieval - just all data"""
+        return self._fmtQRes(self.conn.execute(f"SELECT {self.traffic_fields} FROM traffic"))
+
+    def getAllMetricsAfter(self,minTimestamp):
+        """Simple filter - get all records AFTER a given timestamp"""
+        return self._fmtQRes(self.conn.execute(f"SELECT {self.traffic_fields} FROM TRAFFIC WHERE timestamp > {int(minTimestamp)}"))
+
+    def _fmtQRes(self, query_cursor) :
+        """Bit of a reusable internal"""
+        res = []
+        for r in query_cursor:
+            res.append({
+                'ts'  : r[0],
+                'mac' : r[1],
+                'app' : r[2],
+                'cat' : r[3],
+                'tx'  : r[4],
+                'rx'  : r[5]
+            })
+        return res
 
     def fmtMetaData(self):
         """Pretty-print (restructure) object metadata"""
@@ -64,7 +94,8 @@ class TrafficAnalyzerExtractor(object):
                  'latestData'   : self.maxdate,
                  'uniqueMACs'   : self.uniquemacs,
                  'uniqueApps'   : self.uniqueapps,
-                 'uniqueCats'   : self.uniquecats}
+                 'uniqueCats'   : self.uniquecats,
+                 'totalRows'    : self.numrows}
 #################################################################################
 def fmtTimeStamp(ts) :
     t = time.localtime(ts)
@@ -92,3 +123,11 @@ if __name__ == "__main__":
     print(f"I know the names of {len(tdata.uniquemacs)-missingNames} out of {len(tdata.uniquemacs)} devices")
     print(f"I have data from {fmtTimeStamp(tdata.mindate)} to {fmtTimeStamp(tdata.maxdate)}")
     print(f"And I know about {len(tdata.uniqueapps)} applications across {len(tdata.uniquecats)} categories")
+    print(f"All that is spread across {tdata.numrows} traffic records")
+
+    metrics = tdata.getAllMetrics()
+
+    print(f"Read {len(metrics)} rows myself. The first is: {metrics[0]}")
+
+    lastHourData = tdata.getAllMetricsAfter(tdata.maxdate - 3600)
+    print(f"There are {len(lastHourData)} rows in the last hour of measuring. The last is {lastHourData[len(lastHourData)-1]}")
