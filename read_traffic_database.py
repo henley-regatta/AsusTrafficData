@@ -17,8 +17,25 @@ import sqlite3
 import time
 from os.path import isfile
 from sys import argv
+import json
+from influxdb import InfluxDBClient
 from CustClientListParser import CustClientListParser
 from NtCenterMacParser import NtCenterMacParser
+#################################################################################
+# USER-MODIFIABLE PARAMETERS:
+optionsFile="read_traffic_database_options.json"
+#default options we EXPECT to be overridden:
+opt = {
+    'inHost'        : 'influxserver',
+    'inPort'        : 8086,
+    'inUser'        : 'admin_user',
+    'inPassword'    : 'admin_password',
+    'inDatabase'    : 'routerdata',
+    'inMeasurement' : 'traffic',
+    'ntDBFile'      : 'sampledata/nt_center.db',
+    'clientJSONfile': 'sampledata/custom_clientlist',
+    'trafDataDB'    : 'sampledata/TrafficAnalyzer.db'
+}
 
 #################################################################################
 class TrafficAnalyzerExtractor(object):
@@ -101,33 +118,140 @@ def fmtTimeStamp(ts) :
     t = time.localtime(ts)
     return time.strftime("%Y-%m-%d %H:%M:%S", t)
 
+###############################################################################
+def loadParseJSONFile(path_to_json_file) :
+    """Load a data structure from JSON stored in an external file. Returns
+       either the data structure or None if there's an error"""
+    try:
+        with open(path_to_json_file) as jf:
+            try:
+                readInJSON = json.loads(jf.read())
+            except Exception as e:
+                print(f'WARN Could not parse JSON from file {path_to_json_file}, {e}')
+                return None
+    except Exception as e:
+        print(f'Could not read file {path_to_json_file}, {e}')
+        return None
+
+    return readInJSON
+
+#################################################################################
+def setupInfluxConnection():
+    """Setup connection to Influx database and make sure database exists/is usable"""
+    client = InfluxDBClient(host     = opt['inHost'],
+                            port     = opt['inPort'],
+                            username = opt['inUser'],
+                            password = opt['inPassword'])
+    dblist = [i['name'] for i in client.get_list_database()]
+    if opt['inDatabase'] not in dblist:
+        print(f"Creating database {opt['inDatabase']}")
+        client.create_database(opt['inDatabase'])
+    #Switch to this database
+    client.switch_database(opt['inDatabase'])
+    client.create_retention_policy("std", "365d", "1", database=opt['inDatabase'], default=True)
+    client.create_user("q","q",admin=False)
+    client.grant_privilege("read",opt['inDatabase'],"q")
+    return client
+
+#################################################################################
+def fluxEscapeString(inString) :
+    #Influx doesn't want quotes used. Instead, use backslashes:
+    return inString.replace(" ", "\ ")
+
+#################################################################################
+def fmtDataPoint(metric):
+    """Helper function to turn a metric measurement into an Influx line-protocol insert"""
+    #Setup measurement and tags:
+    if metric['mac'] in macNameList :
+        fname = macNameList[metric['mac']]
+    else :
+        fname = metric['mac']
+    dpoint = ",".join(
+        [ opt['inMeasurement'],
+          f"mac={fluxEscapeString(metric['mac'])}",
+          f"app={fluxEscapeString(metric['app'])}",
+          f"cat={fluxEscapeString(metric['cat'])}",
+          f"name={fluxEscapeString(fname)}"
+        ])
+    #Append field keys:
+    dpoint += f" tx={metric['tx']},rx={metric['rx']}"
+    #Append timestamp
+    dpoint += f" {metric['ts']}"
+    #Store.
+    return(dpoint)
+
+#################################################################################
+def reconcileMacNameLists(masterList,auxList) :
+    """Helper function to coalesce 2 name lists together as the intersection of both"""
+    #Reconcile the two above taking custom as master
+    for m in auxList:
+        if m not in masterList:
+            masterList[m] = auxList[m]
+    return masterList
+
 #################################################################################
 #################################################################################
 #################################################################################
 if __name__ == "__main__":
+
+    #Override options from pref file
+    opt=loadParseJSONFile(optionsFile)
+
     if len(argv) != 2 or not isfile(argv[1]):
-        print("Call with the name of the Traffic Analyzer db as parameter")
-        exit(1)
-    tdata=TrafficAnalyzerExtractor(argv[1])
-    macNameList=CustClientListParser("sampledata/custom_clientlist").getMappings()
-    ntlist=NtCenterMacParser("sampledata/nt_center.db").getMappings()
-    #Reconcile the two above taking custom as master
-    for m in ntlist:
-        if m not in macNameList:
-            macNameList[m] = ntlist[m]
+        print(f"Reading data from default {opt['trafDataDB']} database")
+        tdata=TrafficAnalyzerExtractor(opt['trafDataDB'])
+    else :
+        print(f"Reading data from specified {argv[1]} database")
+        tdata=TrafficAnalyzerExtractor(argv[1])
+
+    macNameList = reconcileMacNameLists(
+                    CustClientListParser(opt['clientJSONfile']).getMappings(),
+                    NtCenterMacParser(opt['ntDBFile']).getMappings())
     missingNames=0
     for m in tdata.uniquemacs:
         if m not in macNameList:
             missingNames += 1
 
+    #Dump the metadata from the stats we've got
     print(f"I know the names of {len(tdata.uniquemacs)-missingNames} out of {len(tdata.uniquemacs)} devices")
     print(f"I have data from {fmtTimeStamp(tdata.mindate)} to {fmtTimeStamp(tdata.maxdate)}")
     print(f"And I know about {len(tdata.uniqueapps)} applications across {len(tdata.uniquecats)} categories")
     print(f"All that is spread across {tdata.numrows} traffic records")
 
-    metrics = tdata.getAllMetrics()
+    #Connect to the database
+    dbconn=setupInfluxConnection()
+    #Get the "latest" timestamp from the db:
+    tq=dbconn.query(f"select * from {opt['inMeasurement']} ORDER BY time desc limit 1", epoch="s")
+    if len(list(tq.get_points())) > 0 :
+        latestInfluxData = int(list(tq.get_points())[0]['time'])
+    else :
+        latestInfluxData = 0
 
-    print(f"Read {len(metrics)} rows myself. The first is: {metrics[0]}")
+    print(f"Influx has data up to {fmtTimeStamp(latestInfluxData)}")
+    #Check how much Metric data we have after this:
+    metricDataNewerThanInflux = tdata.getAllMetricsAfter(int(latestInfluxData))
+    print(f"There are {len(metricDataNewerThanInflux)} points available that aren't in Influx.")
 
-    lastHourData = tdata.getAllMetricsAfter(tdata.maxdate - 3600)
-    print(f"There are {len(lastHourData)} rows in the last hour of measuring. The last is {lastHourData[len(lastHourData)-1]}")
+    #Do we actually need to do anything?
+    if len(metricDataNewerThanInflux) < 1 :
+        print(f"No new data. Fin.")
+        dbconn.close()
+        exit(0)
+
+    #They really don't want you writing in JSON format these days, which is a shame
+    datapoints = []
+    for metric in metricDataNewerThanInflux :
+        datapoints.append(fmtDataPoint(metric))
+
+    #Here's where the insert goes
+    try:
+        sT = time.perf_counter()
+        dbconn.write_points(datapoints, time_precision='s', batch_size=1000, protocol='line')
+        eT = time.perf_counter()
+        elapsed = eT - sT
+        rate = float(len(datapoints)) / elapsed
+        print(f"Wrote {len(datapoints)} rows to measurement {opt['inMeasurement']} in {elapsed} seconds ({rate} rows/second)")
+    except InfluxDBClientError as e:
+        print(f"ERROR writing datapoints to {opt['inMeasurement']}, error = {e}")
+    finally:
+        dbconn.close()

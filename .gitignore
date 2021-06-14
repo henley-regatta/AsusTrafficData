@@ -2,3 +2,5 @@
 sampledata/
 #It's python. Skip compiled stuff
 __pycache__/
+#This mah data. You Can No Has
+*.json
