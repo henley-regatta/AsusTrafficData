@@ -16,7 +16,7 @@
 import sqlite3
 import time
 from os.path import isfile
-from os import getcwd
+import os
 from sys import argv
 import json
 from influxdb import InfluxDBClient
@@ -24,7 +24,8 @@ from CustClientListParser import CustClientListParser
 from NtCenterMacParser import NtCenterMacParser
 #################################################################################
 # USER-MODIFIABLE PARAMETERS:
-optionsFile=getcwd() + "read_traffic_database_options.json"
+# (must be in same directory as script itself)
+optionsFile="read_traffic_database_options.json"
 #default options we EXPECT to be overridden:
 opt = {
     'inHost'        : 'influxserver',
@@ -196,7 +197,10 @@ def reconcileMacNameLists(masterList,auxList) :
 if __name__ == "__main__":
 
     #Override options from pref file
-    opt=loadParseJSONFile(optionsFile)
+    scriptPath = os.path.dirname(os.path.realpath(__file__))
+    fqOptionsFile = scriptPath + "/" + optionsFile
+    print(f"fqOptionsFile {fqOptionsFile}")
+    opt=loadParseJSONFile(fqOptionsFile)
 
     if len(argv) != 2 or not isfile(argv[1]):
         print(f"Reading data from default {opt['trafDataDB']} database")
