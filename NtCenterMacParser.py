@@ -24,9 +24,14 @@ class NtCenterMacParser(object):
         """Return mapping dict from parsed data"""
         return self.mactoname
 
+    def getIPMappings(self):
+        """This is a secondary data set, the source is less reliable but it's serviceable"""
+        return self.mactoip
+
     def __init__(self,ntcenterdbfile):
         """Load and actually do the parsing of the SQLLite database"""
         self.mactoname = {}
+        self.mactoip = {}
         self.dbfile = ntcenterdbfile
         self._parsentcentertable()
 
@@ -43,7 +48,7 @@ class NtCenterMacParser(object):
             conn.close()
 
     def _extractmacnamefromevent(self,jsonmsg) :
-        """Parses the JSON nt_center message and extracts mac,name if available"""
+        """Parses the JSON nt_center message and extracts mac,name,ip if available"""
         try:
             msg = json.loads(jsonmsg)
         except json.decoder.JSONDecodeError as e:
@@ -52,7 +57,18 @@ class NtCenterMacParser(object):
             len(msg['cname'])>0 and len(msg['macaddr'])==17) :
             #We're parsing by date so we can ALWAYS overwrite the value with a "newer" one:
             self.mactoname[msg['macaddr']] = msg['cname']
-
+        if ('ip' in msg and 'macaddr' in msg and
+            len(msg['ip'])>0 and len(msg['macaddr'])==17) :
+            #There's a bug in the data. Octet data isn't scrubbed, so if a
+            #record has 2 digits in an octet but comes after a 3-digit octet,
+            #it'll appear as a 3-digit octet quite frequently outside the 255
+            #range. We can attempt to correct for this by scrubbing the
+            #octets before loading:
+            octets=msg['ip'].split('.')
+            for i in range(len(octets)) :
+                if int(octets[i]) > 255 :
+                    octets[i] = octets[i][0:2]
+            self.mactoip[msg['macaddr']] = '.'.join(octets)
 
 if __name__ == "__main__":
     print("This is a TEST PROGRAM")
@@ -60,8 +76,15 @@ if __name__ == "__main__":
     from os.path import isfile
     from sys import argv
     if len(argv) == 2 and isfile(argv[1]):
-        namemappings = NtCenterMacParser(argv[1]).getMappings()
+        ntMapObj = NtCenterMacParser(argv[1])
+        namemappings = ntMapObj.getMappings()
+        ipmappings = ntMapObj.getIPMappings()
+        print(f"Extracted {len(namemappings)} MAC-to-Name Mappings, and {len(ipmappings)} MAC-to-IP mappings")
         for mac in namemappings:
-            print(f"{mac} -> {namemappings[mac]}")
+            print(f"{mac} -> {namemappings[mac]}",end="")
+            if mac in ipmappings:
+                print(f" ({ipmappings[mac]})")
+            else :
+                print(" (no IP found)")
     else :
         print("When called directly, supply the path to an ASUS Router nt_center.db file on the command line")
