@@ -271,26 +271,19 @@ def updateRStatsMeasurement(tomatofile, dbconn) :
     rStats = TomatoData(tomatofile)
     dMin,dMax = rStats.getDailyRange()
     mMin,mMax = rStats.getMonthlyRange()
-
-    #Get the "latest" timestamps from the db:
-    dMaxInflux = getLatestRecordForMeasurement(opt['rstatsDailyM'], dbconn)
-    mMaxInflux = getLatestRecordForMeasurement(opt['rstatsMonthM'], dbconn)
     print(f"Tomato Daily range: {fmtTimeStamp(dMin)} - {fmtTimeStamp(dMax)}")
     print(f"Tomato Month range: {fmtTimeStamp(mMin)} - {fmtTimeStamp(mMax)}")
-    print(f"Influx Max Daily:   {fmtTimeStamp(dMaxInflux)}")
-    print(f"Influx Max Monthly: {fmtTimeStamp(mMaxInflux)}")
 
     #Create an insert based on whether we've got new data to load:
+    #NB: There can be multi-insert issues where a "partial record" is stored
+    #    in influx that's been later updated on disk. So we actually need to
+    #    pretty much always put the few rows of each type of data in.
     newRows = []
-    if dMaxInflux < dMax :
-        for p in rStats.getDaily():
-            if p['date'] > dMaxInflux:
-                newRows.append(fmtRstatDataPoint(p, opt['rstatsDailyM']))
-    if mMaxInflux < mMax :
-        for p in rStats.getMonthly():
-            if p['date'] > mMaxInflux:
-                newRows.append(fmtRstatDataPoint(p, opt['rstatsMonthM']))
-    print(f"Rows to insert:     {len(newRows)}")
+    for r in sorted(rStats.getDaily(), key=lambda k: k['date'], reverse=True)[:3]:
+        newRows.append(fmtRstatDataPoint(r, opt['rstatsDailyM']))
+    for r in sorted(rStats.getMonthly(), key=lambda k: k['date'], reverse=True)[:3]:
+        newRows.append(fmtRstatDataPoint(r, opt['rstatsMonthM']))
+    print(f"Rows to insert/update: {len(newRows)}")
     if len(newRows)>0 :
         try:
             dbconn.write_points(newRows, time_precision='s', batch_size=1000, protocol='line')

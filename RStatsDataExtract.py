@@ -13,6 +13,7 @@ import gzip
 import struct
 from collections import namedtuple
 from datetime import datetime, timezone
+from time import ctime
 
 ###############################################################################
 ###############################################################################
@@ -84,6 +85,11 @@ class TomatoData(object):
                 outCount.append(cMetric)
         return outCount
 
+    def _prettyPrint_counters(self,counters):
+        """Helper class to pretty-print set of counters"""
+        for val in sorted(self._format_counters(counters), key=lambda k: k['date'], reverse=False):
+            print(f"{ctime(val['date'])}\t\t{val['down']}\t{val['up']}")
+
     def _getDateRange(self, counters):
         """Helper function, return earliest & latest defined date from counter"""
         earliest=99999999999999
@@ -109,6 +115,13 @@ class TomatoData(object):
     def getMonthlyRange(self):
         return self._getDateRange(self.monthly)
 
+    def prettyPrintDaily(self):
+        self._prettyPrint_counters(self.daily)
+
+    def prettyPrintMonthly(self):
+        self._prettyPrint_counters(self.monthly)
+
+
 ###############################################################################
 ###############################################################################
 ###############################################################################
@@ -119,9 +132,12 @@ if __name__ == "__main__":
     from os.path import isfile
     if len(argv) == 2 and isfile(argv[1]):
         bwUsage = TomatoData(argv[1])
-        print(bwUsage.getDaily())
-        print(bwUsage.getMonthly())
-        print(f"Daily data range:   {bwUsage.getDailyRange()}")
-        print(f"Monthly data range: {bwUsage.getMonthlyRange()}")
+        print("Daily Data:")
+        print(f"Daily Date Ranges:   {bwUsage.getDailyRange()}")
+        print(f"\tDate\t\t\t\t\tdown\tup")
+        bwUsage.prettyPrintDaily()
+        print("Monthly Data:")
+        print(f"Monthly Date Ranges: {bwUsage.getMonthlyRange()}")
+        bwUsage.prettyPrintMonthly()
     else :
         print("When called directly, supply the path to a COMPRESSED ASUS RStats (tomato) file on the command line")
