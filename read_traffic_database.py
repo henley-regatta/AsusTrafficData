@@ -267,6 +267,7 @@ def updateInfluxTrafficHistory(trafficDataFile, dbconn) :
 #################################################################################
 def updateRStatsMeasurement(tomatofile, dbconn) :
 
+    print(f"RStats(Tomato) File {tomatofile}")
     rStats = TomatoData(tomatofile)
     dMin,dMax = rStats.getDailyRange()
     mMin,mMax = rStats.getMonthlyRange()
