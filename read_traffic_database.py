@@ -22,6 +22,8 @@ import json
 from influxdb import InfluxDBClient
 from CustClientListParser import CustClientListParser
 from NtCenterMacParser import NtCenterMacParser
+from RStatsDataExtract import TomatoData
+
 #################################################################################
 # USER-MODIFIABLE PARAMETERS:
 # (must be in same directory as script itself)
@@ -36,7 +38,10 @@ opt = {
     'inMeasurement' : 'traffic',
     'ntDBFile'      : 'sampledata/nt_center.db',
     'clientJSONfile': 'sampledata/custom_clientlist',
-    'trafDataDB'    : 'sampledata/TrafficAnalyzer.db'
+    'trafDataDB'    : 'sampledata/TrafficAnalyzer.db',
+    'rstatsDailyM'  : 'rstatsDaily',
+    'rstatsMonthM'  : 'rstatsMonthly',
+    'rstatsfile'    : 'sampledata/tomato_rstats_blahblah.gz'
 }
 
 #################################################################################
@@ -161,7 +166,7 @@ def fluxEscapeString(inString) :
     return inString.replace(" ", "\ ")
 
 #################################################################################
-def fmtDataPoint(metric):
+def fmtTrafficDataPoint(metric):
     """Helper function to turn a metric measurement into an Influx line-protocol insert"""
     #Setup measurement and tags:
     if metric['mac'] in macNameList :
@@ -183,6 +188,13 @@ def fmtDataPoint(metric):
     return(dpoint)
 
 #################################################################################
+def fmtRstatDataPoint(metric,measurement):
+    """Helper function to turn an rstat measurement into an Influx line-protocol insert"""
+    #Almost trivial but worth functionalising for later reuse.
+    dpoint = f"{measurement} rx={metric['down']},tx={metric['up']} {metric['date']}"
+    return dpoint
+
+#################################################################################
 def reconcileMacNameLists(masterList,auxList) :
     """Helper function to coalesce 2 name lists together as the intersection of both"""
     #Reconcile the two above taking custom as master
@@ -192,23 +204,19 @@ def reconcileMacNameLists(masterList,auxList) :
     return masterList
 
 #################################################################################
-#################################################################################
-#################################################################################
-if __name__ == "__main__":
-
-    #Override options from pref file
-    scriptPath = os.path.dirname(os.path.realpath(__file__))
-    fqOptionsFile = scriptPath + "/" + optionsFile
-    print(f"fqOptionsFile {fqOptionsFile}")
-    opt=loadParseJSONFile(fqOptionsFile)
-
-    if len(argv) != 2 or not isfile(argv[1]):
-        print(f"Reading data from default {opt['trafDataDB']} database")
-        tdata=TrafficAnalyzerExtractor(opt['trafDataDB'])
+def getLatestRecordForMeasurement(measurement, dbconn):
+    """Helper function since we seem to do this a lot...."""
+    tq=dbconn.query(f"select * from {measurement} ORDER BY time desc limit 1", epoch="s")
+    if len(list(tq.get_points())) > 0 :
+        latestInfluxData = int(list(tq.get_points())[0]['time'])
     else :
-        print(f"Reading data from specified {argv[1]} database")
-        tdata=TrafficAnalyzerExtractor(argv[1])
+        latestInfluxData = 0
+    return latestInfluxData
 
+#################################################################################
+def updateInfluxTrafficHistory(trafficDataFile, dbconn) :
+    """Wrapper for the whole process of updating the TrafficHistory measurement"""
+    tdata=TrafficAnalyzerExtractor(trafficDataFile)
     macNameList = reconcileMacNameLists(
                     CustClientListParser(opt['clientJSONfile']).getMappings(),
                     NtCenterMacParser(opt['ntDBFile']).getMappings())
@@ -218,35 +226,29 @@ if __name__ == "__main__":
             missingNames += 1
 
     #Dump the metadata from the stats we've got
-    print(f"I know the names of {len(tdata.uniquemacs)-missingNames} out of {len(tdata.uniquemacs)} devices")
-    print(f"I have data from {fmtTimeStamp(tdata.mindate)} to {fmtTimeStamp(tdata.maxdate)}")
-    print(f"And I know about {len(tdata.uniqueapps)} applications across {len(tdata.uniquecats)} categories")
-    print(f"All that is spread across {tdata.numrows} traffic records")
+    print(f"Traffic Data file:  {trafficDataFile}")
+    print(f"Friendly Names:     {len(tdata.uniquemacs)-missingNames} of {len(tdata.uniquemacs)} devices")
+    print(f"Date Range:         {fmtTimeStamp(tdata.mindate)} - {fmtTimeStamp(tdata.maxdate)}")
+    print(f"Traffic Analyzer:   {len(tdata.uniqueapps)} applications, {len(tdata.uniquecats)} categories")
+    print(f"Total Records:      {tdata.numrows} traffic records")
 
-    #Connect to the database
-    dbconn=setupInfluxConnection()
     #Get the "latest" timestamp from the db:
-    tq=dbconn.query(f"select * from {opt['inMeasurement']} ORDER BY time desc limit 1", epoch="s")
-    if len(list(tq.get_points())) > 0 :
-        latestInfluxData = int(list(tq.get_points())[0]['time'])
-    else :
-        latestInfluxData = 0
+    latestInfluxData = getLatestRecordForMeasurement(opt['inMeasurement'], dbconn)
 
-    print(f"Influx has data up to {fmtTimeStamp(latestInfluxData)}")
+    print(f"Influx latest:      {fmtTimeStamp(latestInfluxData)}")
     #Check how much Metric data we have after this:
     metricDataNewerThanInflux = tdata.getAllMetricsAfter(int(latestInfluxData))
-    print(f"There are {len(metricDataNewerThanInflux)} points available that aren't in Influx.")
+    print(f"Records to add:     {len(metricDataNewerThanInflux)}")
 
     #Do we actually need to do anything?
     if len(metricDataNewerThanInflux) < 1 :
-        print(f"No new data. Fin.")
-        dbconn.close()
-        exit(0)
+        print(f"No new Traffic data to add to Influx")
+        return
 
     #They really don't want you writing in JSON format these days, which is a shame
     datapoints = []
     for metric in metricDataNewerThanInflux :
-        datapoints.append(fmtDataPoint(metric))
+        datapoints.append(fmtTrafficDataPoint(metric))
 
     #Here's where the insert goes
     try:
@@ -258,5 +260,67 @@ if __name__ == "__main__":
         print(f"Wrote {len(datapoints)} rows to measurement {opt['inMeasurement']} in {elapsed} seconds ({rate} rows/second)")
     except InfluxDBClientError as e:
         print(f"ERROR writing datapoints to {opt['inMeasurement']}, error = {e}")
-    finally:
-        dbconn.close()
+
+    return
+
+
+#################################################################################
+def updateRStatsMeasurement(tomatofile, dbconn) :
+
+    rStats = TomatoData(tomatofile)
+    dMin,dMax = rStats.getDailyRange()
+    mMin,mMax = rStats.getMonthlyRange()
+
+    #Get the "latest" timestamps from the db:
+    dMaxInflux = getLatestRecordForMeasurement(opt['rstatsDailyM'], dbconn)
+    mMaxInflux = getLatestRecordForMeasurement(opt['rstatsMonthM'], dbconn)
+    print(f"Tomato Daily range: {fmtTimeStamp(dMin)} - {fmtTimeStamp(dMax)}")
+    print(f"Tomato Month range: {fmtTimeStamp(mMin)} - {fmtTimeStamp(mMax)}")
+    print(f"Influx Max Daily:   {fmtTimeStamp(dMaxInflux)}")
+    print(f"Influx Max Monthly: {fmtTimeStamp(mMaxInflux)}")
+
+    #Create an insert based on whether we've got new data to load:
+    newRows = []
+    if dMaxInflux < dMax :
+        for p in rStats.getDaily():
+            if p['date'] > dMaxInflux:
+                newRows.append(fmtRstatDataPoint(p, opt['rstatsDailyM']))
+    if mMaxInflux < mMax :
+        for p in rStats.getMonthly():
+            if p['date'] > mMaxInflux:
+                newRows.append(fmtRstatDataPoint(p, opt['rstatsMonthM']))
+    print(f"Rows to insert:     {len(newRows)}")
+    if len(newRows)>0 :
+        try:
+            dbconn.write_points(newRows, time_precision='s', batch_size=1000, protocol='line')
+        except InfluxDBClientError as e:
+            print(f"ERROR writing RStats datapoints: {e}")
+
+    return
+
+#################################################################################
+#################################################################################
+#################################################################################
+if __name__ == "__main__":
+    #Override options from pref file
+    scriptPath = os.path.dirname(os.path.realpath(__file__))
+    fqOptionsFile = scriptPath + "/" + optionsFile
+    print(f"fqOptionsFile {fqOptionsFile}")
+    opt=loadParseJSONFile(fqOptionsFile)
+
+    #Handle being passed a traffic database on the command line:
+    if len(argv) != 2 or not isfile(argv[1]):
+        tDataFile = opt['trafDataDB']
+    else :
+        tDataFile = argv[1]
+
+    #Connect to the database
+    dbconn=setupInfluxConnection()
+    #Run the update process based on extracted data:
+    updateInfluxTrafficHistory(tDataFile,dbconn)
+
+    #Update the overall (rStats) Statistics
+    updateRStatsMeasurement(opt['rstatsfile'],dbconn)
+
+    #End of script
+    dbconn.close()

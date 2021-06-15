@@ -76,11 +76,30 @@ class TomatoData(object):
                 outCount.append(cMetric)
         return outCount
 
+    def _getDateRange(self, counters):
+        """Helper function, return earliest & latest defined date from counter"""
+        earliest=99999999999999
+        latest=0
+        for c in counters:
+            if c.date != 0:
+                cdate=self.get_date(c.date)
+                if cdate > latest:
+                    latest = cdate
+                if cdate < earliest:
+                    earliest = cdate
+        return earliest, latest
+
     def getDaily(self) :
         return self._format_counters(self.daily)
 
     def getMonthly(self) :
         return self._format_counters(self.monthly)
+
+    def getDailyRange(self):
+        return self._getDateRange(self.daily)
+
+    def getMonthlyRange(self):
+        return self._getDateRange(self.monthly)
 
 ###############################################################################
 ###############################################################################
@@ -94,5 +113,7 @@ if __name__ == "__main__":
         bwUsage = TomatoData(argv[1])
         print(bwUsage.getDaily())
         print(bwUsage.getMonthly())
+        print(f"Daily data range:   {bwUsage.getDailyRange()}")
+        print(f"Monthly data range: {bwUsage.getMonthlyRange()}")
     else :
         print("When called directly, supply the path to a COMPRESSED ASUS RStats (tomato) file on the command line")

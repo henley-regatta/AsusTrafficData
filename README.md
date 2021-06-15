@@ -18,6 +18,7 @@ The key files on the router that we'll use are:
   * `/jffs/.sys/nc/nt_center.db` - ASUS Notification Center database (SQLite)
   * `/tmp/clientlist.json` - "Live" record of devices connected to router and how (JSON)
   * `/jffs/nvram/custom_clientlist` - File-of-Record used by the router to map MAC addresses to friendly names (Weird angle-bracket delimiting). Irritatingly, not _All_ known names are defined herein; names reported to the router by (presumably) MDNS/Avahi or DHCP reservations don't appear here.
+  * `/jffs/CustomPath/tomato_rstats_<identifier>.gz` - "Tomato" format RStats data saved to specified path when router's _Tools_ -> _Other Settings_ -> _Traffic Monitoring_ is setup to save data. Contains daily/monthly summaries of all traffic passing through the router.
 
 ## Notes on Usage
 
