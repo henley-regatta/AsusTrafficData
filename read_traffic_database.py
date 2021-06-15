@@ -166,7 +166,7 @@ def fluxEscapeString(inString) :
     return inString.replace(" ", "\ ")
 
 #################################################################################
-def fmtTrafficDataPoint(metric):
+def fmtTrafficDataPoint(metric, macNameList):
     """Helper function to turn a metric measurement into an Influx line-protocol insert"""
     #Setup measurement and tags:
     if metric['mac'] in macNameList :
@@ -248,7 +248,7 @@ def updateInfluxTrafficHistory(trafficDataFile, dbconn) :
     #They really don't want you writing in JSON format these days, which is a shame
     datapoints = []
     for metric in metricDataNewerThanInflux :
-        datapoints.append(fmtTrafficDataPoint(metric))
+        datapoints.append(fmtTrafficDataPoint(metric, macNameList))
 
     #Here's where the insert goes
     try:
