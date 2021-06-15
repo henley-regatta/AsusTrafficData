@@ -42,19 +42,27 @@ class TomatoData(object):
         daily = []
         monthly = []
 
-        version, = struct.unpack("I0l", self.rstats_file.read(8))
+        #original used "l" but that's platform-size-dependent.
+        # "q" is a long long of 8 bytes, always
+        version, = struct.unpack("I0q", self.rstats_file.read(8))
+
         if version == TomatoData.ID_V0:
             max_monthly = 12
+        elif version != TomatoData.ID_V1:
+            print(f"Unknown Rstats file version, aborting ({hex(version)})")
+            exit(1)
 
         for i in range(max_daily):
             self.daily.append(Bandwidth._make(struct.unpack("I2Q", self.rstats_file.read(24))))
 
-        dailyp, = struct.unpack("i0l", self.rstats_file.read(8))
+        #Again, original format was "i0l" but that's 4 bytes on some platforms:
+        dailyp, = struct.unpack("i0q", self.rstats_file.read(8))
 
         for i in range(max_monthly):
             self.monthly.append(Bandwidth._make(struct.unpack("I2Q", self.rstats_file.read(24))))
 
-        monthlyp, = struct.unpack("i0l", self.rstats_file.read(8))
+        #Another format change "i0l" -> "i0q"
+        monthlyp, = struct.unpack("i0q", self.rstats_file.read(8))
 
     @staticmethod
     def get_date(xtime):
