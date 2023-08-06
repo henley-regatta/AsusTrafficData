@@ -16,6 +16,9 @@
 #     Internal format of the clientlist is similar to a repetition of:
 #          <Name>MacAddress>Int1>Int2>>
 #     (noting that "<" and ">" are literals not representative)
+#
+#  Note that the FIRST record isn't started with "<" but all others appear to be.
+#  this is thus used as the record delimiter
 ###############################################################################
 from os.path import isfile
 
@@ -37,7 +40,7 @@ class CustClientListParser(object):
 
     def _parseclientdata(self):
         """Actually perform the work of parsing data into a KVP Dictionary"""
-        kvp = self.rawdata.split(">>") # Split on "record delimiter"
+        kvp = self.rawdata.split("<") # Split on "record delimiter"
         if len(kvp)<2 :
             raise TypeError("Passed incorrect ASUS custom_clientlist data")
         for rec in kvp:
@@ -46,11 +49,11 @@ class CustClientListParser(object):
             fields = rec.split(">")
             if len(fields) < 2 :
                 raise TypeError(f"Invalid record in custom_clientlist data: {rec}")
-            if fields[0][:1] != "<" :
-                raise ValueError(f"Invalid NAME field in record {rec} ({fields[0]})")
+            #if fields[0][:1] != "<" :
+            #    raise ValueError(f"Invalid NAME field in record {rec} ({fields[0]})")
             if len(fields[1]) != 17 :
                 raise ValueError(f"Invalid MAC field in record {rec} ({fields[1]})")
-            self.mactoname[fields[1]] = fields[0][1:] #Strip the "<" before appending
+            self.mactoname[fields[1]] = fields[0] 
 
     def getMappings(self):
         """Return mapping dict from parsed data"""
